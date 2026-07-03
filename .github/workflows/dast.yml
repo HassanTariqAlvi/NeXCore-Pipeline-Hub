@@ -1,0 +1,57 @@
+name: DAST - OWASP ZAP
+
+on:
+  workflow_call:
+    inputs:
+      api-target:
+        required: false
+        type: string
+        default: 'http://localhost:3001'
+      options-target:
+        required: false
+        type: string
+        default: 'http://localhost:3002'
+      compose-file:
+        required: false
+        type: string
+        default: 'docker-compose.yml'
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  dast:
+    name: DAST - OWASP ZAP
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start services via Docker Compose
+        run: |
+          docker compose -f ${{ inputs.compose-file }} up -d --build
+          echo "Waiting for services to be healthy..."
+          timeout 120 bash -c 'until docker compose ps | grep -E "api-service.*healthy"; do sleep 3; done'
+          timeout 120 bash -c 'until docker compose ps | grep -E "options-service.*healthy"; do sleep 3; done'
+
+      - name: ZAP Baseline Scan - API Service
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: ${{ inputs.api-target }}
+          rules_file_name: .zap/rules.tsv
+          cmd_options: '-a'
+          fail_action: false
+          artifact_name: zap-api-service-report
+
+      - name: ZAP Baseline Scan - Options Service
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: ${{ inputs.options-target }}
+          rules_file_name: .zap/rules.tsv
+          cmd_options: '-a'
+          fail_action: false
+          artifact_name: zap-options-service-report
+
+      - name: Stop services
+        if: always()
+        run: docker compose -f ${{ inputs.compose-file }} down
