@@ -1,0 +1,41 @@
+name: 'Unit Tests'
+description: 'Run unit tests with coverage for a Node.js service'
+
+inputs:
+  service:
+    required: false
+    default: 'frontend'
+    description: 'Service directory name'
+  node-version:
+    required: false
+    default: '20'
+    description: 'Node.js version to use'
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: npm
+        cache-dependency-path: ${{ inputs.service }}/package-lock.json
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: ${{ inputs.service }}
+      run: npm ci
+
+    - name: Run tests
+      shell: bash
+      working-directory: ${{ inputs.service }}
+      run: npm test -- --watchAll=false --passWithNoTests --coverage
+
+    - name: Upload coverage report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report
+        path: ${{ inputs.service }}/coverage/

@@ -1,0 +1,63 @@
+name: 'Container Scan - Trivy'
+description: 'Build Docker image and scan for vulnerabilities using Trivy'
+
+inputs:
+  service:
+    required: true
+    description: 'Service directory name (e.g. api-service, frontend)'
+  image:
+    required: true
+    description: 'Docker image name (e.g. micro-apps/api-service)'
+  severity:
+    required: false
+    default: 'CRITICAL,HIGH'
+    description: 'Comma-separated list of severities to scan for'
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./${{ inputs.service }}
+        push: false
+        load: true
+        tags: ${{ inputs.image }}:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Download Trivy HTML template
+      shell: bash
+      run: |
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl \
+          -o html.tpl
+
+    - name: Trivy scan (HTML report)
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ inputs.image }}:${{ github.sha }}
+        format: template
+        template: '@html.tpl'
+        output: trivy-${{ inputs.service }}.html
+        severity: ${{ inputs.severity }}
+        exit-code: '0'
+
+    - name: Trivy scan (table summary)
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ inputs.image }}:${{ github.sha }}
+        format: table
+        severity: ${{ inputs.severity }}
+        exit-code: '0'
+
+    - name: Upload Trivy HTML report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: trivy-${{ inputs.service }}-report
+        path: trivy-${{ inputs.service }}.html
